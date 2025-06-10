@@ -1,45 +1,112 @@
-// routes/userRoutes.js
-const express = require("express");
-const router = express.Router();
-const userController = require("../controllers/userController");
-const { validate } = require("../middleware/validate");
-const auth = require("../middleware/auth");
-const Joi = require("joi");
+// Adicionar no userRoutes.js
+const { auth, requireAdmin, canManageUser, logSensitiveAction } = require("../middleware/auth");
 
-// Schema de validação para registro
-const registerSchema = Joi.object({
-  name: Joi.string().min(2).required(),
+// Schema para criação de usuário
+const createUserSchema = Joi.object({
+  name: Joi.string().min(2).max(50).required(),
   email: Joi.string().email().required(),
   password: Joi.string().min(6).required(),
-  role: Joi.string().valid("admin", "perito", "assistente"),
+  role: Joi.string().valid("admin", "perito", "assistente").default("assistente")
 });
 
-// Schema de validação para login
-const loginSchema = Joi.object({
-  email: Joi.string().email().required(),
-  password: Joi.string().min(6).required(),
+// Schema para atualização de status
+const toggleStatusSchema = Joi.object({
+  isActive: Joi.boolean().required()
 });
 
-// Schema de validação para refresh token
-const refreshTokenSchema = Joi.object({
-  refreshToken: Joi.string().required(),
+// Schema para atualização de permissões
+const updatePermissionsSchema = Joi.object({
+  permissions: Joi.object({
+    cases: Joi.object({
+      read: Joi.boolean(),
+      write: Joi.boolean(),
+      delete: Joi.boolean()
+    }),
+    evidences: Joi.object({
+      read: Joi.boolean(),
+      write: Joi.boolean(),
+      delete: Joi.boolean()
+    }),
+    reports: Joi.object({
+      read: Joi.boolean(),
+      write: Joi.boolean(),
+      delete: Joi.boolean()
+    }),
+    patients: Joi.object({
+      read: Joi.boolean(),
+      write: Joi.boolean(),
+      delete: Joi.boolean()
+    }),
+    dentalRecords: Joi.object({
+      read: Joi.boolean(),
+      write: Joi.boolean(),
+      delete: Joi.boolean()
+    }),
+    users: Joi.object({
+      read: Joi.boolean(),
+      write: Joi.boolean(),
+      delete: Joi.boolean()
+    })
+  }).required()
 });
 
-// Rotas que não precisam de autenticação
-router.post("/register", validate(registerSchema), userController.registerUser);
-router.post("/login", validate(loginSchema), userController.loginUser);
-router.get("/me", auth(), userController.getMe);
-router.post("/forgotpassword", userController.forgotPassword);
-router.put("/reset", userController.resetPassword);
+// NOVAS ROTAS PARA GESTÃO DE ACESSOS
+
+// Criar novo usuário (apenas admin)
 router.post(
-  "/refresh-token",
-  validate(refreshTokenSchema),
-  userController.refreshToken
+  "/create", 
+  auth(), 
+  requireAdmin, 
+  validate(createUserSchema), 
+  logSensitiveAction("CREATE_USER"),
+  userController.createUser
 );
-router.get("/", auth(["admin"]), userController.getAllUsers);
-router.put("/:id/role", auth(["admin"]), userController.updateUserRole);
 
-// Rotas que precisam de autenticação
-router.post("/logout", auth(), userController.logoutUser);
+// Listar todos os usuários com permissões (apenas admin)
+router.get(
+  "/admin/all", 
+  auth(), 
+  requireAdmin, 
+  userController.getAllUsersWithPermissions
+);
 
-module.exports = router;
+// Ativar/desativar usuário (apenas admin)
+router.patch(
+  "/:id/toggle-status", 
+  auth(), 
+  requireAdmin, 
+  canManageUser,
+  validate(toggleStatusSchema), 
+  logSensitiveAction("TOGGLE_USER_STATUS"),
+  userController.toggleUserStatus
+);
+
+// Atualizar permissões específicas (apenas admin)
+router.patch(
+  "/:id/permissions", 
+  auth(), 
+  requireAdmin, 
+  canManageUser,
+  validate(updatePermissionsSchema), 
+  logSensitiveAction("UPDATE_USER_PERMISSIONS"),
+  userController.updateUserPermissions
+);
+
+// Atualizar role do usuário (apenas admin) - melhorada
+router.put(
+  "/:id/role", 
+  auth(), 
+  requireAdmin, 
+  canManageUser,
+  logSensitiveAction("UPDATE_USER_ROLE"),
+  userController.updateUserRole
+);
+
+// Rota para verificar permissões do usuário atual
+router.get("/permissions", auth(), (req, res) => {
+  res.json({
+    success: true,
+    permissions: req.userFull.permissions,
+    role: req.user.role
+  });
+});

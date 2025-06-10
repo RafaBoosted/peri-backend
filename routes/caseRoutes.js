@@ -4,6 +4,8 @@ const caseController = require("../controllers/caseController");
 const auth = require("../middleware/auth");
 const { validate } = require("../middleware/validate");
 const Joi = require("joi");
+const { auth, checkResourcePermission } = require('../middleware/auth');
+const { auditLogger } = require('../middleware/audit');
 
 // Schema de validação para criação de caso
 const caseSchema = Joi.object({
@@ -65,3 +67,28 @@ router.delete(
 );
 
 module.exports = router;
+
+// Listar casos - precisa de permissão de leitura
+router.get('/', 
+  auth(), 
+  checkResourcePermission('cases', 'read'),
+  auditLogger('LIST_CASES', 'cases'),
+  caseController.getAllCases
+);
+
+// Criar caso - precisa de permissão de escrita
+router.post('/', 
+  auth(), 
+  checkResourcePermission('cases', 'write'),
+  validate(createCaseSchema),
+  auditLogger('CREATE_CASE', 'cases'),
+  caseController.createCase
+);
+
+// Deletar caso - precisa de permissão de exclusão
+router.delete('/:id', 
+  auth(), 
+  checkResourcePermission('cases', 'delete'),
+  auditLogger('DELETE_CASE', 'cases'),
+  caseController.deleteCase
+);
